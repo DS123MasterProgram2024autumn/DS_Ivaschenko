@@ -1,0 +1,140 @@
+---
+title: "Лабораторна робота №5. Побудова регресійних моделей"
+author: '[Іващенко А.В.]'
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    highlight: tango
+    toc: true
+  html_document:
+    toc: true
+    df_print: paged
+  pdf_document:
+    highlight: tango
+    toc: true
+  html_notebook:
+    toc: true
+    toc_float: true
+    highlight: tango
+fontsize: 12pt
+header-includes: \usepackage[T2A]{fontenc} \usepackage[utf8]{inputenc} \usepackage[russian]{babel}
+editor_options:
+  chunk_output_type: console
+---
+
+### 1. Исследование данных
+Сначала загрузим данные и рассмотрим их структуру:
+
+```{r}
+# Загрузка данных
+library(dplyr)
+library(randomForest)
+library(doParallel)
+library(engsoccerdata)
+data("england")
+
+# Просмотр первых строк
+head(england)
+```
+Мы получим таблицу, содержащую столбцы: Season, Date, home, visitor, hgoal, vgoal, tier, и другие.
+
+### 2. Постановка задачи
+Будем прогнозировать количество голов домашней команды (hgoal) на основе:
+
+Среднего количества забитых голов домашней команды в сезоне (mean_home_goals).
+Разницы забитых и пропущенных голов домашней команды в сезоне (goal_diff_home).
+Среднего количества пропущенных голов гостевой командой (mean_visitor_goals).
+### 3. Подготовка данных
+Создадим агрегированные метрики и добавим их в основной набор данных:
+
+```{r}
+library(dplyr)
+
+# Агрегированные метрики
+team_stats <- england %>%
+  group_by(Season, home) %>%
+  summarize(
+    mean_home_goals = mean(hgoal),
+    goal_diff_home = sum(hgoal) - sum(vgoal)
+  )
+
+visitor_stats <- england %>%
+  group_by(Season, visitor) %>%
+  summarize(mean_visitor_goals = mean(vgoal))
+
+# Объединяем с основным набором данных
+data_model <- england %>%
+  left_join(team_stats, by = c("Season", "home")) %>%
+  left_join(visitor_stats, by = c("Season", "visitor"))
+```
+### 4. Построение моделей
+Построим две модели:
+
+Множественная линейная регрессия.
+Модель на основе случайного леса (random forest).
+Линейная регрессия
+```{r}
+# Линейная регрессия
+model_lm <- lm(hgoal ~ mean_home_goals + goal_diff_home + mean_visitor_goals, data = data_model)
+summary(model_lm)
+```
+Random Forest
+```{r}
+library(randomForest)
+set.seed(42)  # Для воспроизводимости
+sample_data <- data_model %>% sample_n(5000) 
+cl <- makeCluster(detectCores() - 1)  # Используем все ядра, кроме одного
+registerDoParallel(cl)
+# Random Forest
+model_rf <- randomForest(hgoal ~ mean_home_goals + goal_diff_home + mean_visitor_goals,
+                         data = sample_data,
+                         ntree = 100)
+print(model_rf)
+```
+### 5. Оценка моделей
+Оценим качество моделей по метрикам RMSE и R²:
+
+```{r}
+# Предсказания для линейной модели
+pred_lm <- predict(model_lm, data_model)
+rmse_lm <- sqrt(mean((data_model$hgoal - pred_lm)^2))
+
+# Предсказания для Random Forest
+pred_rf <- predict(model_rf, data_model)
+rmse_rf <- sqrt(mean((data_model$hgoal - pred_rf)^2))
+
+# Вывод результатов
+cat("RMSE Линейная модель:", rmse_lm, "\n")
+cat("RMSE Random Forest:", rmse_rf, "\n")
+```
+### 6. Визуализация
+Построим графики для сравнения реальных и предсказанных значений:
+
+```{r}
+library(ggplot2)
+
+# Линейная модель
+ggplot(data_model, aes(x = hgoal, y = pred_lm)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, color = "red") +
+  ggtitle("Линейная модель: Реальные vs Предсказанные")
+
+# Random Forest
+ggplot(data_model, aes(x = hgoal, y = pred_rf)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, color = "blue") +
+  ggtitle("Random Forest: Реальные vs Предсказанные")
+```
+### 7. Выводы
+После выполнения всех шагов можно:
+
+Сравнить качество моделей (например, по RMSE).
+Сделать вывод о том, какие переменные оказывают наибольшее влияние.
+Выбрать наиболее подходящую модель для прогнозирования.
+Готов продолжить работу или доработать код под конкретные ваши цели!
+
+
+
+
+
+
